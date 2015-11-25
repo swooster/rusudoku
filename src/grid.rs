@@ -1,8 +1,15 @@
 //! Data structures for tracking cell/value possibilities.
 
+use std::fmt;
+use std::io::Result as IOResult;
 use std::iter;
 use std::ops;
 use std::slice;
+
+/// Input/output for grids
+pub mod io {
+    pub use super::super::io::*;
+}
 
 /// Cell value index.
 ///
@@ -164,6 +171,12 @@ impl Grid {
         }
     }
 
+    /// Reads new `Grid` from lines iterator.
+    pub fn read<I>(lines: &mut I) -> Result<Grid, io::Error>
+        where I: Iterator<Item=IOResult<String>> {
+        io::GridReader::new().read(lines)
+    }
+
     /// Returns the width of the grid in cells.
     pub fn size(&self) -> usize { self.size }
 
@@ -320,6 +333,13 @@ impl ops::Index<CaseId> for Grid {
 impl ops::IndexMut<CaseId> for Grid {
     fn index_mut(&mut self, CaseId(case_id): CaseId) -> &mut bool {
         &mut self.cases[case_id]
+    }
+}
+
+impl fmt::Display for Grid {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        try!(io::GridWriter::new().write(f, &self));
+        Ok(())
     }
 }
 
