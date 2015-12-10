@@ -13,5 +13,10 @@ fn main() {
             return;
         },
     };
+    let rules = rusudoku::rules::Rules::new_standard(grid.size());
+    if rules.is_none() {
+        println!("Couldn't create rules for sudoku problem {} cells wide.", grid.size());
+        return;
+    }
     print!("{}", grid);
 }
