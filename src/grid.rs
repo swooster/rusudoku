@@ -102,14 +102,14 @@ impl FromIndex<(ValueId, CellId)> for CaseId {
 }
 
 impl FromIndex<CaseId> for (CellId, ValueId) {
-    fn convert(CaseId(cell_id): CaseId, size: usize) -> Self {
-        (CellId(cell_id / size), ValueId(cell_id % size))
+    fn convert(CaseId(case_id): CaseId, size: usize) -> Self {
+        (CellId(case_id / size), ValueId(case_id % size))
     }
 }
 
 impl FromIndex<CaseId> for (ValueId, CellId) {
-    fn convert(CaseId(cell_id): CaseId, size: usize) -> Self {
-        (ValueId(cell_id % size), CellId(cell_id / size))
+    fn convert(CaseId(case_id): CaseId, size: usize) -> Self {
+        (ValueId(case_id % size), CellId(case_id / size))
     }
 }
 
