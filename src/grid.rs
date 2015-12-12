@@ -29,7 +29,7 @@ pub struct CellId(pub usize);
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct CaseId(pub usize);
 
-/// Marker trait to indicate grid-size-dependent conversions.
+/// Utility trait to define grid-size-dependent conversions.
 ///
 /// Very similar to the `std::convert::From` trait, except that conversions also need to know an
 /// appropriate grid size. Generally used by the `HasGridSize` trait.
