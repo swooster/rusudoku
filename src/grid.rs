@@ -32,7 +32,7 @@ pub struct CaseId(pub usize);
 /// Marker trait to indicate grid-size-dependent conversions.
 ///
 /// Very similar to the `std::convert::From` trait, except that conversions also need to know an
-/// appropriate grid size. Generally used by the `IndexConverter` trait.
+/// appropriate grid size. Generally used by the `HasGridSize` trait.
 pub trait FromIndex<T> {
     /// Converts `other` to `Self`
     ///
@@ -113,7 +113,36 @@ impl FromIndex<CaseId> for (ValueId, CellId) {
     }
 }
 
-/// Indicates ability to perform size-dependent index conversion.
+/// Utility trait to store grid-size-dependent index ranges.
+pub trait RangedIndex: Sized {
+    type RangeIter: Iterator<Item=Self>;
+    /// Returns iterator of all valid ids for a particular puzzle size.
+    // NOTE: I'd prefer to return a Range instead, but I'm not aware of a way to
+    // make Range<MyType> iterable.
+    fn range_iter(size: usize) -> Self::RangeIter;
+    /// Returns the range of valid indexes for a particular index type.
+    fn range(size: usize) -> ops::Range<Self>;
+}
+
+impl RangedIndex for ValueId {
+    type RangeIter = iter::Map<ops::Range<usize>, fn(usize) -> Self>;
+    fn range_iter(size: usize) -> Self::RangeIter { (0..size).map(ValueId) }
+    fn range(size: usize) -> ops::Range<Self> { ValueId(0)..ValueId(size) }
+}
+
+impl RangedIndex for CellId {
+    type RangeIter = iter::Map<ops::Range<usize>, fn(usize) -> Self>;
+    fn range_iter(size: usize) -> Self::RangeIter { (0..size*size).map(CellId) }
+    fn range(size: usize) -> ops::Range<Self> { CellId(0)..CellId(size*size) }
+}
+
+impl RangedIndex for CaseId {
+    type RangeIter = iter::Map<ops::Range<usize>, fn(usize) -> Self>;
+    fn range_iter(size: usize) -> Self::RangeIter { (0..size*size*size).map(CaseId) }
+    fn range(size: usize) -> ops::Range<Self> { CaseId(0)..CaseId(size*size*size) }
+}
+
+/// Indicates ability to perform puzzle-size-dependent index operations.
 ///
 /// This trait indicates that something has a particular puzzle size, allowing it to perform
 /// conversions between types such as `ValueId`, `CellId` and `CaseId`.
@@ -122,7 +151,7 @@ impl FromIndex<CaseId> for (ValueId, CellId) {
 ///
 /// ```rust
 /// # use rusudoku::grid::*;
-/// let c = SimpleConverter(9);
+/// let c = SimpleIndexUtil(9);
 /// let cell_id: CellId = c.convert((4, 5));
 /// let value_id: ValueId = c.convert(6);
 /// let case_id: CaseId = c.convert((cell_id, value_id));
@@ -131,25 +160,35 @@ impl FromIndex<CaseId> for (ValueId, CellId) {
 /// let value: usize = c.convert(value_id);
 /// assert_eq!((x, y, value), (4, 5, 6))
 /// ```
-pub trait IndexConverter {
+pub trait HasGridSize {
     /// Returns puzzle width (in cells) that conversions assume.
-    fn conversion_size(&self) -> usize;
+    fn grid_size(&self) -> usize;
     /// Convert `T` into `U`, for a puzzle `conversion_size()` cells wide.
     fn convert<T, U>(&self, t: T) -> U
         where U: FromIndex<T> {
-        U::convert(t, self.conversion_size())
+        U::convert(t, self.grid_size())
+    }
+    /// Return iterator of all valid indexes of a particular type.
+    fn range_iter<T>(&self) -> <T as RangedIndex>::RangeIter
+        where T: RangedIndex {
+        <T as RangedIndex>::range_iter(self.grid_size())
+    }
+    /// Return a `Range` of valid indexes of a particular type.
+    fn range<T>(&self) -> ops::Range<T>
+        where T: RangedIndex {
+        <T as RangedIndex>::range(self.grid_size())
     }
 }
 
-/// Simple light-weight index converter.
+/// Simple light-weight index utility.
 ///
 /// Allows for converting between `ValueId`, `CellId` and `CaseId` without needing to store
 /// a full puzzle `Grid`. The contained `usize` represents the puzzle size (width in cells).
 #[derive(Clone, Copy, Debug)]
-pub struct SimpleConverter(pub usize);
+pub struct SimpleIndexUtil(pub usize);
 
-impl IndexConverter for SimpleConverter {
-    fn conversion_size(&self) -> usize { self.0 }
+impl HasGridSize for SimpleIndexUtil {
+    fn grid_size(&self) -> usize { self.0 }
 }
 
 /// Stores the possible values for each cell of a puzzle.
@@ -304,8 +343,8 @@ pub type CellsIterMut<'a> = iter::Zip<iter::Map<ops::RangeFrom<usize>, fn(usize)
 pub type CasesIter<'a>    = iter::Zip<iter::Map<ops::Range<usize>,     fn(usize) -> CaseId>, slice::Iter<'a, bool>>;
 pub type CasesIterMut<'a> = iter::Zip<iter::Map<ops::Range<usize>,     fn(usize) -> CaseId>, slice::IterMut<'a, bool>>;
 
-impl IndexConverter for Grid {
-    fn conversion_size(&self) -> usize { self.size }
+impl HasGridSize for Grid {
+    fn grid_size(&self) -> usize { self.size }
 }
 
 impl ops::Index<CellId> for Grid {
@@ -351,7 +390,7 @@ mod tests {
 
     #[test]
     fn test_value_id_conversions() {
-        let c = SimpleConverter(9);
+        let c = SimpleIndexUtil(9);
         let cases = vec![(1, 0), (5,4), (9, 8)];
         for (initial, expected_internal) in cases {
             let ValueId(value_id) = c.convert(initial);
@@ -365,7 +404,7 @@ mod tests {
     #[should_panic]
     #[cfg(debug_assertions)]
     fn test_value_id_cannot_be_zero() {
-        let c = SimpleConverter(9);
+        let c = SimpleIndexUtil(9);
         let _: ValueId = c.convert(0);
     }
 
@@ -373,13 +412,13 @@ mod tests {
     #[should_panic]
     #[cfg(debug_assertions)]
     fn test_value_id_cannot_be_too_large() {
-        let c = SimpleConverter(9);
+        let c = SimpleIndexUtil(9);
         let _: ValueId = c.convert(10);
     }
 
     #[test]
     fn test_cell_id_conversions() {
-        let c = SimpleConverter(9);
+        let c = SimpleIndexUtil(9);
         let cases = vec![(0, 0,  0), (5, 0,  5), (8, 0,  8),
                          (0, 1,  9), (2, 3, 29), (8, 4, 44),
                          (0, 8, 72), (4, 8, 76), (8, 8, 80)];
@@ -395,7 +434,7 @@ mod tests {
     #[should_panic]
     #[cfg(debug_assertions)]
     fn test_cell_id_x_cannot_be_too_large() {
-        let c = SimpleConverter(9);
+        let c = SimpleIndexUtil(9);
         let _: CellId = c.convert((9,0));
     }
 
@@ -403,13 +442,13 @@ mod tests {
     #[should_panic]
     #[cfg(debug_assertions)]
     fn test_cell_id_y_cannot_be_too_large() {
-        let c = SimpleConverter(9);
+        let c = SimpleIndexUtil(9);
         let _: CellId = c.convert((0,9));
     }
 
     #[test]
     fn test_case_id_conversions() {
-        let c = SimpleConverter(9);
+        let c = SimpleIndexUtil(9);
         let cases = vec![( 0, 0,   0), ( 0, 4,   4), ( 0, 8,   8),
                          ( 1, 0,   9), ( 2, 3,  21), ( 8, 4,  76),
                          (79, 8, 719), (80, 0, 720), (80, 8, 728)];
@@ -429,13 +468,40 @@ mod tests {
 
     #[test]
     fn test_alternate_size_conversions() {
-        let c = SimpleConverter(16);
+        let c = SimpleIndexUtil(16);
         let CellId(cell_id) = c.convert((5,12));
         assert_eq!(cell_id, 197);
         let ValueId(value_id) = c.convert(9);
         assert_eq!(value_id, 8);
         let CaseId(case_id) = c.convert((CellId(cell_id), ValueId(value_id)));
         assert_eq!(case_id, 3160);
+    }
+
+    #[test]
+    fn test_index_ranges() {
+        let c = SimpleIndexUtil(4);
+        assert_eq!(c.range(), ValueId(0)..ValueId(4));
+        assert_eq!(c.range(), CellId(0)..CellId(16));
+        assert_eq!(c.range(), CaseId(0)..CaseId(64));
+        let c = SimpleIndexUtil(9);
+        assert_eq!(c.range(), ValueId(0)..ValueId(9));
+        assert_eq!(c.range(), CellId(0)..CellId(81));
+        assert_eq!(c.range(), CaseId(0)..CaseId(729));
+    }
+
+    #[test]
+    fn test_index_range_iters() {
+        let c = SimpleIndexUtil(4);
+        assert_eq!(c.range_iter::<ValueId>().last(), Some(ValueId(3)));
+        assert_eq!(c.range_iter::<ValueId>().count(), 4);
+        assert_eq!(c.range_iter::<CellId>().last(), Some(CellId(15)));
+        assert_eq!(c.range_iter::<CellId>().count(), 16);
+        assert_eq!(c.range_iter::<CaseId>().last(), Some(CaseId(63)));
+        assert_eq!(c.range_iter::<CaseId>().count(), 64);
+        let c = SimpleIndexUtil(9);
+        assert_eq!(c.range_iter::<ValueId>().count(), 9);
+        assert_eq!(c.range_iter::<CellId>().count(), 81);
+        assert_eq!(c.range_iter::<CaseId>().count(), 729);
     }
 
     #[test]
@@ -494,7 +560,7 @@ mod tests {
     #[test]
     fn test_grid_cell_mut_iter() {
         let mut grid = Grid::new(9);
-        let c = SimpleConverter(9);
+        let c = SimpleIndexUtil(9);
         for (i, (case, possibility)) in grid.cell_mut((1,0)).enumerate() {
             let (cell, value): (CellId, ValueId) = c.convert(case);
             assert_eq!((1,0), c.convert(cell));
