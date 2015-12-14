@@ -9,7 +9,7 @@ use grid::CellId;
 /// Clique index.
 ///
 /// This is used to address a particular clique.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CliqueId(pub usize);
 
 /// Rules for which cells must have distinct values.

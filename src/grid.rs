@@ -14,19 +14,19 @@ pub mod io {
 /// Cell value index.
 ///
 /// Represents a possible value of a cell, typically 1-9.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ValueId(pub usize);
 
 /// Cell position index.
 ///
 /// This is used to address a particular cell on a grid.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CellId(pub usize);
 
 /// Cell/value combination index.
 ///
 /// This is used to address the possibility that a particular cell is a particular value.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CaseId(pub usize);
 
 /// Utility trait to define grid-size-dependent conversions.
