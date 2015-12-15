@@ -47,15 +47,10 @@ use super::rules::{CliqueId, Rules};
 /// let mut grid = Grid::read(&mut lines).unwrap();
 /// let rules = Rules::new_standard(grid.size()).unwrap();
 /// let mut partitioner = Partitioner::new(&rules);
-/// let mut vetoes: Vec<_> = grid.cases()
-///                              .filter(|&(_, &allowed)| !allowed)
-///                              .map(|(case, _)| case)
-///                              .collect();
+/// let mut vetoes: Vec<_> = grid.vetoes().collect();
 /// while vetoes.len() > 0 {
 ///     partitioner.veto(vetoes.iter().cloned());
-///     for veto in vetoes {
-///         grid[veto] = false;
-///     }
+///     grid.veto(vetoes.iter().cloned());
 ///     vetoes = mem::replace(&mut partitioner.inferences, vec![]);
 /// }
 /// let mut output = String::new();
@@ -373,15 +368,10 @@ mod tests {
         let mut grid = Grid::read(&mut lines).unwrap();
         let rules = Rules::new_standard(grid.size()).unwrap();
         let mut partitioner = Partitioner::new(&rules);
-        let mut vetoes: Vec<_> = grid.cases()
-                                     .filter(|&(_, &allowed)| !allowed)
-                                     .map(|(case, _)| case)
-                                     .collect();
+        let mut vetoes: Vec<_> = grid.vetoes().collect();
         while vetoes.len() > 0 {
             partitioner.veto(vetoes.iter().cloned());
-            for veto in vetoes {
-                grid[veto] = false;
-            }
+            grid.veto(vetoes.iter().cloned());
             vetoes = mem::replace(&mut partitioner.inferences, vec![]);
         }
         let mut output = String::new();

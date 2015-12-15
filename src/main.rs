@@ -24,17 +24,12 @@ fn main() {
         },
     };
 
-    let mut vetos: Vec<_> = grid.cases()
-                                .filter(|&(_, &allowed)| !allowed)
-                                .map(|(case, _)| case)
-                                .collect();
     let mut partitioner = rusudoku::solver::Partitioner::new(&rules);
-    while vetos.len() > 0 {
-        partitioner.veto(vetos.iter().cloned());
-        for veto in vetos {
-            grid[veto] = false;
-        }
-        vetos = mem::replace(&mut partitioner.inferences, vec![]);
+    let mut vetoes: Vec<_> = grid.vetoes().collect();
+    while vetoes.len() > 0 {
+        partitioner.veto(vetoes.iter().cloned());
+        grid.veto(vetoes.iter().cloned());
+        vetoes = mem::replace(&mut partitioner.inferences, vec![]);
     }
 
     print!("{}", grid);
