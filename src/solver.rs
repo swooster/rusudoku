@@ -47,16 +47,16 @@ use super::rules::{CliqueId, Rules};
 /// let mut grid = Grid::read(&mut lines).unwrap();
 /// let rules = Rules::new_standard(grid.size()).unwrap();
 /// let mut partitioner = Partitioner::new(&rules);
-/// let mut vetos: Vec<_> = grid.cases()
-///                             .filter(|&(_, &allowed)| !allowed)
-///                             .map(|(case, _)| case)
-///                             .collect();
-/// while vetos.len() > 0 {
-///     partitioner.veto(vetos.iter().cloned());
-///     for veto in vetos {
+/// let mut vetoes: Vec<_> = grid.cases()
+///                              .filter(|&(_, &allowed)| !allowed)
+///                              .map(|(case, _)| case)
+///                              .collect();
+/// while vetoes.len() > 0 {
+///     partitioner.veto(vetoes.iter().cloned());
+///     for veto in vetoes {
 ///         grid[veto] = false;
 ///     }
-///     vetos = mem::replace(&mut partitioner.inferences, vec![]);
+///     vetoes = mem::replace(&mut partitioner.inferences, vec![]);
 /// }
 /// let mut output = String::new();
 /// write!(&mut output, "{}", grid);
@@ -154,10 +154,10 @@ impl<'a, R> Partitioner<R>
     ///
     /// This is used to inform the `Partitioner` of cell/value combinations that are known
     /// to be impossible.
-    pub fn veto<I>(&mut self, vetos: I)
+    pub fn veto<I>(&mut self, vetoes: I)
         where I: Iterator<Item=CaseId> {
         let rules = &mut self.rules.clone();
-        for veto in vetos {
+        for veto in vetoes {
             if !self.grid[veto] {
                 continue;
             }
@@ -288,8 +288,8 @@ mod tests {
     #[test]
     fn test_value_exclusion() {
         // Restrict upper-left cell to be a 1.
-        let vetos = [1, 2, 3];
-        assert_eq!(infer_from_vetos(4, &vetos), [
+        let vetoes = [1, 2, 3];
+        assert_eq!(infer_from_vetoes(4, &vetoes), [
             // The rest of the row is restricted from being 1,
             4, 8, 12,
             // as is the rest of the zone,
@@ -302,8 +302,8 @@ mod tests {
     #[test]
     fn test_cell_exclusion() {
         // Veto the right 3 cells of the top row from being 1.
-        let vetos = [4, 8, 12];
-        assert_eq!(infer_from_vetos(4, &vetos), [
+        let vetoes = [4, 8, 12];
+        assert_eq!(infer_from_vetoes(4, &vetoes), [
             // The top left cell is required to be 1.
             1, 2, 3,
         ]);
@@ -312,8 +312,8 @@ mod tests {
     #[test]
     fn test_multicell_partitioning() {
         // Restrict the left 2 cells of the top row to be a 1 or 2.
-        let vetos = [2, 3, 6, 7];
-        assert_eq!(infer_from_vetos(4, &vetos), [
+        let vetoes = [2, 3, 6, 7];
+        assert_eq!(infer_from_vetoes(4, &vetoes), [
             // The rest of the row is restricted from being 1 or 2,
             8, 9, 12, 13,
             // as is the rest of the zone.
@@ -321,10 +321,10 @@ mod tests {
         ]);
     }
 
-    fn infer_from_vetos(size: usize, vetos: &[usize]) -> Vec<usize> {
+    fn infer_from_vetoes(size: usize, vetoes: &[usize]) -> Vec<usize> {
         let rules = Rules::new_standard(size).unwrap();
         let mut partitioner = Partitioner::new(&rules);
-        partitioner.veto(vetos.iter().cloned().map(CaseId));
+        partitioner.veto(vetoes.iter().cloned().map(CaseId));
         partitioner.inferences.sort();
         partitioner.inferences.dedup();
         partitioner.inferences.into_iter()
@@ -373,16 +373,16 @@ mod tests {
         let mut grid = Grid::read(&mut lines).unwrap();
         let rules = Rules::new_standard(grid.size()).unwrap();
         let mut partitioner = Partitioner::new(&rules);
-        let mut vetos: Vec<_> = grid.cases()
-                                    .filter(|&(_, &allowed)| !allowed)
-                                    .map(|(case, _)| case)
-                                    .collect();
-        while vetos.len() > 0 {
-            partitioner.veto(vetos.iter().cloned());
-            for veto in vetos {
+        let mut vetoes: Vec<_> = grid.cases()
+                                     .filter(|&(_, &allowed)| !allowed)
+                                     .map(|(case, _)| case)
+                                     .collect();
+        while vetoes.len() > 0 {
+            partitioner.veto(vetoes.iter().cloned());
+            for veto in vetoes {
                 grid[veto] = false;
             }
-            vetos = mem::replace(&mut partitioner.inferences, vec![]);
+            vetoes = mem::replace(&mut partitioner.inferences, vec![]);
         }
         let mut output = String::new();
         let _ = write!(&mut output, "{}", grid);
