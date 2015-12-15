@@ -336,12 +336,43 @@ impl Grid {
         let case_id: fn(_) -> _ = CaseId;
         (0..self.cases.len()).map(case_id).zip(self.cases.iter_mut())
     }
+
+    /// Marks supplied `CaseId`s as impossible
+    ///
+    /// This is a convenience method for interacting with solvers. It's equivalent to:
+    ///
+    /// ```rust
+    /// # use rusudoku::grid::*;
+    /// # let mut grid = Grid::new(1);
+    /// # let vetoes = vec![CaseId(0)];
+    /// for veto in vetoes {
+    ///    grid[veto] = false;
+    /// }
+    /// ```
+    pub fn veto<T>(&mut self, vetoes: T)
+        where T: iter::Iterator<Item=CaseId> {
+        for veto in vetoes {
+            self[veto] = false;
+        }
+    }
+
+    /// Returns `CaseId`s that are impossible.
+    ///
+    /// This is a convenience method for interacting with solvers. It returns an iterator of
+    /// `CaseId`s that have been marked as impossible.
+    pub fn vetoes(&self) -> VetoesIter {
+        fn to_case_id_if_vetoed((case_id, allowed): (usize, &bool)) -> Option<CaseId> {
+            if *allowed { None } else { Some(CaseId(case_id)) }
+        }
+        self.cases.iter().enumerate().filter_map(to_case_id_if_vetoed)
+    }
 }
 
 pub type CellsIter<'a>    = iter::Zip<iter::Map<ops::RangeFrom<usize>, fn(usize) -> CellId>, slice::Chunks<'a, bool>>;
 pub type CellsIterMut<'a> = iter::Zip<iter::Map<ops::RangeFrom<usize>, fn(usize) -> CellId>, slice::ChunksMut<'a, bool>>;
 pub type CasesIter<'a>    = iter::Zip<iter::Map<ops::Range<usize>,     fn(usize) -> CaseId>, slice::Iter<'a, bool>>;
 pub type CasesIterMut<'a> = iter::Zip<iter::Map<ops::Range<usize>,     fn(usize) -> CaseId>, slice::IterMut<'a, bool>>;
+pub type VetoesIter<'a>   = iter::FilterMap<iter::Enumerate<slice::Iter<'a, bool>>, fn((usize, &bool)) -> Option<CaseId>>;
 
 impl HasGridSize for Grid {
     fn grid_size(&self) -> usize { self.size }
@@ -598,6 +629,26 @@ mod tests {
         assert!(grid.cases[9]);
         assert!(!grid.cases[10]);
         assert!(grid.cases[11]);
+    }
+
+    #[test]
+    fn test_grid_veto() {
+        let mut grid = Grid::new(9);
+        let vetoes = [7, 42, 53];
+        grid.veto(vetoes.iter().cloned().map(CaseId));
+        assert!(!grid[CaseId(7)]);
+        assert!(!grid[CaseId(42)]);
+        assert!(!grid[CaseId(53)]);
+    }
+
+    #[test]
+    fn test_grid_vetoes() {
+        let mut grid = Grid::new(9);
+        grid[CaseId(7)]  = false;
+        grid[CaseId(42)] = false;
+        grid[CaseId(53)] = false;
+        let vetoes: Vec<_> = grid.vetoes().collect();
+        assert_eq!(vetoes, [CaseId(7), CaseId(42), CaseId(53)]);
     }
 
     #[test]
