@@ -17,8 +17,8 @@ fn main() {
 
     let rules = rusudoku::rules::Rules::new_standard(grid.size());
     let rules = match rules {
-        Some(rules) => rules,
-        None => {
+        Ok(rules) => rules,
+        Err(_) => {
             println!("Couldn't create rules for sudoku problem {} cells wide.", grid.size());
             return;
         },

@@ -1,5 +1,7 @@
 //! Data strutures for storing the rules of sudoku
 
+use std::fmt;
+use std::error;
 use std::iter;
 use std::ops;
 use std::slice;
@@ -26,6 +28,7 @@ pub struct CliqueId(pub usize);
 /// let classic_rules = Rules::new_standard(9).expect("Classic sudoku rules are possible.");
 /// let six_by_six_rules = Rules::new(RegularCliquesIterator::new(3, 2));
 /// ```
+#[derive(Debug)]
 pub struct Rules {
     size: usize,
     clique_cells: Vec<Vec<CellId>>,
@@ -101,16 +104,16 @@ impl Rules {
     /// sudoku rules (two cells must differ if they share a row, column or zone), with each
     /// zone being a square. For example classic sudoku rules can be created with
     /// `Rules::new_standard(9)`. However, if classic sudoku rules cannot be created for a
-    /// grid of the given `size` (due to lacking an integer square root), `None` is returned
-    /// instead of `Some(Rules {...})`.
-    pub fn new_standard(size: usize) -> Option<Rules> {
+    /// grid of the given `size` (due to lacking an integer square root), an
+    /// `Err(NonSquareError {...})` is returned instead of an `Ok(Rules {...})`.
+    pub fn new_standard(size: usize) -> Result<Rules, NonSquareError> {
         // This makes me a little uncomfortable, but at least
         // it shouldn't be a problem for reasonable sizes.
         let zone_size = (size as f64).sqrt().ceil() as usize;
         if zone_size * zone_size == size {
-            Some(Self::new(RegularCliquesIterator::new(zone_size, zone_size)))
+            Ok(Self::new(RegularCliquesIterator::new(zone_size, zone_size)))
         } else {
-            None
+            Err(NonSquareError{ size: size })
         }
     }
 
@@ -284,6 +287,31 @@ impl Iterator for RectIndexIter {
     }
 }
 
+/// Indicates that a size has no integer square root
+///
+/// This is returned when standad rules cannot be created because their
+/// zones cannot be arranged as squares.
+#[derive(Debug)]
+pub struct NonSquareError {
+    size: usize,
+}
+
+impl NonSquareError {
+    pub fn size(&self) -> usize { self.size }
+}
+
+impl fmt::Display for NonSquareError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} has no integer square root", self.size)
+    }
+}
+
+impl error::Error for NonSquareError {
+    fn description(&self) -> &str {
+        "size's has no integer square root"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,8 +384,14 @@ mod tests {
     fn test_rules_standard() {
         let standard_works = [false, true, false, false, true, false, false, false, false, true, false];
         for (size, &expected) in standard_works.iter().enumerate().skip(1) {
-            assert_eq!(Rules::new_standard(size).is_some(), expected);
+            assert_eq!(Rules::new_standard(size).is_ok(), expected);
         }
+    }
+
+    #[test]
+    fn test_rules_standard_error() {
+        let err = Rules::new_standard(12).unwrap_err();
+        assert_eq!(err.size(), 12);
     }
 
     #[test]
