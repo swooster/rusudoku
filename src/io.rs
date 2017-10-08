@@ -91,7 +91,7 @@ impl GridReader {
     /// Any errors encountered will halt consumption of lines mid-way.
     pub fn read<I>(&self, lines: &mut I) -> Result<Grid, Error>
         where I: Iterator<Item=io::Result<String>> {
-        let rows = try!(self.parse_rows(lines));
+        let rows = self.parse_rows(lines)?;
         Ok(GridReader::rows_to_grid(rows))
     }
 
@@ -99,14 +99,14 @@ impl GridReader {
         where I: Iterator<Item=io::Result<String>> {
         let mut rows = vec!();
         for (y, line) in (0..self.size_range.end+1).zip(lines) {
-            let line = try!(line);
+            let line = line?;
             let cells = line.split_whitespace()
                             .map(|token| (*self.cell_parser)(token))
                             .zip(0..self.size_range.end+1)
                             .map(|(result, x)| result.map_err(|e|
                                 Error::CellParse{ x: x, y: y, cause: e }
                             ));
-            let cells: Vec<_> = try!(self.coerce_oversized_errors(cells.collect()));
+            let cells: Vec<_> = self.coerce_oversized_errors(cells.collect())?;
             if cells.len() == 0 {
                 break;
             }
@@ -120,7 +120,7 @@ impl GridReader {
                 return Err(Error::RowLength { y: y, size: row.len(), expected: rows.len() });
             }
         }
-        try!(GridReader::check_cell_values(&rows));
+        GridReader::check_cell_values(&rows)?;
         Ok(rows)
     }
 
@@ -264,8 +264,8 @@ impl GridWriter {
         });
 
         for (cell, ws) in cells.zip(whitespace) {
-            try!((*self.cell_writer)(w, num_width, cell));
-            try!(write!(w, "{}", ws));
+            (*self.cell_writer)(w, num_width, cell)?;
+            write!(w, "{}", ws)?;
         }
 
         Ok(())
@@ -350,7 +350,7 @@ impl fmt::Display for Error {
                        x, y, value, expected.start, expected.end - 1),
             Error::RowLength{y, size, expected} =>
                 write!(f, "grid row {} has length of {}, but {} was expected", y, size, expected),
-            Error::GridSize{size, ref expected} => 
+            Error::GridSize{size, ref expected} =>
                 write!(f, "grid size was {}, but should be from {} to {}",
                        size, expected.start, expected.end - 1),
         }
@@ -394,7 +394,7 @@ mod tests {
         let mut output = String::new();
         let reader = GridReader::new();
         let writer = GridWriter::new();
-        let grid = try!(reader.read(&mut lines));
+        let grid = reader.read(&mut lines)?;
         writer.write(&mut output, &grid).unwrap();
         Ok(output)
     }

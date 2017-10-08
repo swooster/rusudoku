@@ -408,7 +408,7 @@ impl ops::IndexMut<CaseId> for Grid {
 
 impl fmt::Display for Grid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        try!(io::GridWriter::new().write(f, &self));
+        io::GridWriter::new().write(f, &self)?;
         Ok(())
     }
 }
