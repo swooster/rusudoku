@@ -196,6 +196,7 @@ impl HasGridSize for SimpleIndexUtil {
 /// A grid contains cells arranged in a square (with `size` cells per side). Each cell
 /// has `size` different `bool`s, each one indicating whether the cell may be a particular
 /// value.
+#[derive(Clone)]
 pub struct Grid {
     size: usize,
     cases: Vec<bool>, // TODO: Memory-efficient implementation?

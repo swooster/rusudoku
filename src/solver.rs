@@ -7,6 +7,37 @@ use std::ops::Deref;
 use super::grid::{CaseId, CellId, FromIndex, Grid, HasGridSize, ValueId};
 use super::rules::{CliqueId, Rules};
 
+/// Common interface for sudoku strategies
+///
+/// A `Strategy` is something that can narrow down the possible solutions of a puzzle, but which
+/// may not be able to solve a puzzle by itself. The idea is that a solver could combine multiple
+/// strategies to minimize the need for guessing.
+///
+/// Note that a `Strategy` is NOT required to incorporate its own inferences, so for best results
+/// a `Strategy`'s own inferences should be fed back into it.
+pub trait Strategy {
+    /// Marks `CaseId`s as impossible.
+    ///
+    /// This is used to inform the `Strategy` of cell/value combinations that are known
+    /// to be impossible. The `Strategy` must ignore any vetoes it's already aware of.
+    fn veto(&mut self, vetoes: &[CaseId]);
+
+    /// Returns a mutable reference to a Vec of `CaseId`s inferred to be impossible.
+    ///
+    /// As `CaseId`s are vetoed, new inferences will be pushed onto the `Vec` returned by
+    /// `inferences()`. It's fine to mess with the `Vec` however you want, such as clearing
+    /// it after reading it.
+    ///
+    /// Note that `inferences()` is allowed to return `CaseId`s that have already been marked
+    /// as impossible.
+    fn inferences(&mut self) -> &mut Vec<CaseId>;
+
+    /// Returns a boxed clone of the `Strategy`.
+    ///
+    /// This allows the `Strategy` to be copied without knowledge of its type.
+    fn boxed_clone(&self) -> Box<Strategy>;
+}
+
 /// Infers solution constraints by partitioning possibilities
 ///
 /// Given the constraints of a sudoku puzzle, a `Partitioner` can infer additional constraints,
@@ -60,6 +91,7 @@ use super::rules::{CliqueId, Rules};
 ///                     3 4 1 2\n\
 ///                     2 1 4 3\n");
 /// ```
+#[derive(Clone)]
 pub struct Partitioner<R> {
     rules: R,
     grid: Grid,
@@ -72,6 +104,7 @@ pub struct Partitioner<R> {
 }
 
 // Pair of mappings from possibilities to referrers (see below)
+#[derive(Clone)]
 struct LookupPair {
     valueset_cells: Lookup<ValueId, CellId>,
     cellset_values: Lookup<CellId, ValueId>,
@@ -270,12 +303,29 @@ impl<'a, R> Partitioner<R>
     }
 }
 
+impl<R> Strategy for Partitioner<R>
+    where R: Deref<Target=Rules> + Clone + 'static {
+
+    fn veto(&mut self, vetoes: &[CaseId]) {
+        self.veto(vetoes.iter().cloned());
+    }
+
+    fn inferences(&mut self) -> &mut Vec<CaseId> {
+        &mut self.inferences
+    }
+
+    fn boxed_clone(&self) -> Box<Strategy> {
+        Box::new(self.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     use std::fmt::Write;
     use std::mem;
+    use std::rc::Rc;
 
     use super::super::grid::{CaseId, Grid};
     use super::super::rules::Rules;
@@ -377,5 +427,16 @@ mod tests {
         let mut output = String::new();
         let _ = write!(&mut output, "{}", grid);
         output
+    }
+
+    #[test]
+    fn test_partitioner_as_strategy() {
+        let rules = Rules::new_standard(4).unwrap();
+        let p = &mut Partitioner::new(Rc::new(rules)) as &mut Strategy;
+        let vetoes = vec![CaseId(1), CaseId(2), CaseId(3)];
+        p.veto(&vetoes);
+        let mut p2 = p.boxed_clone();
+        assert_eq!(p2.inferences(), p.inferences());
+        assert!(p2.inferences().len() > 0);
     }
 }
