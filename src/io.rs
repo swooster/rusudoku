@@ -173,7 +173,10 @@ impl GridReader {
     }
 }
 
-struct SizeRange(Range<usize>);
+/// A helper type for representing a range of grid-sizes that can be parsed.
+///
+/// This exists to simulate overloading `GridReader.set_size_range()`
+pub struct SizeRange(Range<usize>);
 
 impl From<RangeTo<usize>> for SizeRange {
     fn from(range: RangeTo<usize>) -> Self { SizeRange(1..range.end) }
@@ -269,7 +272,10 @@ impl GridWriter {
     }
 }
 
-struct CellWriter(Box<CellWriterFn>);
+/// A helper type for representing ways of writing a cell.
+///
+/// This exists to simulate overloading `GridWritier.set_cell_writer()`
+pub struct CellWriter(Box<CellWriterFn>);
 
 impl From<Box<CellWriterFn>> for CellWriter {
     fn from(closure: Box<CellWriterFn>) -> Self {
