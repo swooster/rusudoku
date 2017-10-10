@@ -15,6 +15,3 @@ _ 6 _ _ _ _ 2 8 _
 _ _ _ 4 1 9 _ _ 5
 _ _ _ _ 8 _ _ 7 9
 ```
-
-`rusudoku` doesn't yet fall back on guessing, so there are puzzles it can't solve. This should
-hopefully be fixed soon.

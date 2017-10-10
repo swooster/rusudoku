@@ -2,10 +2,164 @@
 
 use std::collections;
 use std::hash::Hash;
+use std::iter::{Rev, Take, Zip};
+use std::mem;
 use std::ops::Deref;
+use std::rc::Rc;
+use std::slice::{ChunksMut, IterMut};
 
 use super::grid::{CaseId, CellId, FromIndex, Grid, HasGridSize, ValueId};
 use super::rules::{CliqueId, Rules};
+
+/// Solves a `Grid`
+///
+/// This is a simple wrapper for `SolutionsIter` that uses sane defaults.
+pub fn solve(grid: Grid, rules: Rules) -> Solution {
+    assert_eq!(grid.size(), rules.size());
+    let rules = Rc::new(rules);
+    let partitioner = Partitioner::new(rules);
+    let strategies = vec![Box::new(partitioner) as Box<Strategy>];
+    let mut iter = SolutionsIter::new(grid, strategies);
+    match (iter.next(), iter.next()) {
+        (Some(grid), Some(_)) => Solution::NonUnique(grid),
+        (Some(grid), None)    => Solution::Unique(grid),
+        (None, _)             => Solution::Unsolvable,
+    }
+}
+
+/// Solution to a sudoku puzzle.
+pub enum Solution {
+    /// The puzzle was solved.
+    Unique(Grid),
+    /// The puzzle was solved, but was improper (other solutions exist).
+    NonUnique(Grid),
+    /// The puzzle was unsolvable (a contradiction was found).
+    Unsolvable,
+}
+
+impl Solution {
+    /// Unwraps the `Grid` that contains the results of the `Solution`.
+    pub fn grid(self) -> Option<Grid> {
+        match self {
+            Solution::Unique(grid)    => Some(grid),
+            Solution::NonUnique(grid) => Some(grid),
+            Solution::Unsolvable      => None,
+        }
+    }
+}
+
+/// Iterates over all solutions to a sudoku puzzle
+///
+/// Given a grid of initial conditions and a vector of (usually non-recursive) `Strategy`s, this iterates
+/// over all solutions to the puzzle. It attempts to solve the puzzle by feeding newly discovered inferences
+/// back into all `Strategy`s. If the puzzle cannot be resolved via `Strategy`s (or it has multiple solutions)
+/// this falls back to guessing and recursion as necessary (but it shouldn't exhaust the stack).
+pub struct SolutionsIter {
+    grids: Vec<Grid>,
+    strategies_per_grid: usize,
+    strategies: Vec<Box<Strategy>>,
+}
+
+impl SolutionsIter {
+    /// Constructs a `SolutionsIter` from initial conditions and a set of strategies.
+    pub fn new(mut grid: Grid, mut strategies: Vec<Box<Strategy>>) -> SolutionsIter {
+        let vetoes = grid.vetoes().collect();
+        SolutionsIter::deduce(&mut grid, &mut strategies, vetoes);
+        SolutionsIter {
+            grids: vec![grid],
+            strategies_per_grid: strategies.len(),
+            strategies: strategies,
+        }
+    }
+
+    // Incorporate vetos, taking as much as possible into account without guessing.
+    fn deduce(grid: &mut Grid, strategies: &mut [Box<Strategy>], mut vetoes: Vec<CaseId>) {
+        while vetoes.len() > 0 {
+            let mut inferences: Vec<CaseId> = vec![];
+            for strategy in strategies.iter_mut() {
+                debug_assert_eq!(strategy.inferences().len(), 0);
+                // This is a minimal-copy way of collecting new inferences into `inferences`.
+                mem::swap(&mut inferences, strategy.inferences());
+                strategy.veto(&vetoes[..]);
+                mem::swap(&mut inferences, strategy.inferences());
+            }
+            grid.veto(inferences.iter().cloned());
+            vetoes = inferences;
+        }
+    }
+
+    // Try to find a good cell to guess values for, returning it and the number possible values it might have.
+    // If any cells lack possibilities, return that. (no point guessing if a puzzle can't be solved)
+    // Else, if any cells have at least two possibilies, choose one with the a minimal number of possibilities
+    // Else, the puzzle is solved and it doesn't matter which cell we return.
+    fn find_least_underconstrained_cell(grid: &Grid) -> (CellId, usize) {
+        fn count_true(values: &[bool]) -> usize {
+            values.iter().filter(|&&b| b).count()
+        }
+        let (choices, cell) = grid.cells()
+                                  // We swap order so min sorts correctly
+                                  .map(|(cell_id, values)| (count_true(values), cell_id))
+                                  .filter(|&(choices, _)| choices != 1)
+                                  .min()
+                                  .unwrap_or((1, CellId(0)));
+        (cell, choices)
+    }
+
+    // Pops a (Grid, [Box<Strategy>]) pair off the top of the stack,
+    // and pushes `n` duplicates of it back onto the stack.
+    fn duplicate_last_grid_n_times(&mut self, n: usize) {
+        let grid = self.grids.pop().expect("SolutionsIter bug: duplicate_last_n_grids called on empty iter");
+        let split_index = self.strategies.len() - self.strategies_per_grid;
+        let strategies = self.strategies.split_off(split_index);
+        for _ in 1..n {
+            self.grids.push(grid.clone());
+            self.strategies.extend(strategies.iter().map(|s| s.boxed_clone()));
+        }
+        self.grids.push(grid);
+        self.strategies.extend(strategies.into_iter());
+    }
+
+    // Returns `n` pairs of (Grid, [Box<Strategy>]) from the top of the stack.
+    fn last_n_grids(&mut self, n: usize) -> Take<Rev<Zip<IterMut<Grid>, ChunksMut<Box<Strategy>>>>> {
+        self.grids.iter_mut()
+            .zip(self.strategies.chunks_mut(self.strategies_per_grid))
+            .rev()
+            .take(n)
+    }
+}
+
+impl Iterator for SolutionsIter {
+    type Item = Grid;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(grid) = self.grids.pop() {
+            let (cell, number_of_choices) = SolutionsIter::find_least_underconstrained_cell(&grid);
+            let new_strategies_len = self.strategies.len() - self.strategies_per_grid;
+            if number_of_choices == 0 {
+                self.strategies.truncate(new_strategies_len);
+                continue;
+            }
+            if number_of_choices == 1 {
+                self.strategies.truncate(new_strategies_len);
+                return Some(grid);
+            }
+
+            // Hookay, looks like we'll have to guess. :(
+            // Start by prepping grids and strategies... wish I could figure out how to do this with one fewer allocations.
+            self.grids.push(grid);
+            self.duplicate_last_grid_n_times(number_of_choices);
+            for (n, (mut grid, mut strategies)) in self.last_n_grids(number_of_choices).enumerate() {
+                let mut vetoes: Vec<CaseId> = grid.cell(cell)
+                                              .filter(|&(_, &possible)| possible)
+                                              .map(|(case_id, _)| case_id)
+                                              .collect();
+                vetoes.swap_remove(n);
+                SolutionsIter::deduce(&mut grid, &mut strategies, vetoes);
+            }
+        }
+        None
+    }
+}
 
 /// Common interface for sudoku strategies
 ///
@@ -379,10 +533,10 @@ mod tests {
 
     #[test]
     fn test_solve_basic4() {
-        let solution = solve("1 _ _ _\n\
-                              _ 2 _ _\n\
-                              3 _ _ _\n\
-                              _ _ 4 _\n");
+        let solution = fully_partition("1 _ _ _\n\
+                                        _ 2 _ _\n\
+                                        3 _ _ _\n\
+                                        _ _ 4 _\n");
 
         assert_eq!(solution, "1 3 2 4\n\
                               4 2 3 1\n\
@@ -392,15 +546,15 @@ mod tests {
 
     #[test]
     fn test_solve_classic9() {
-        let solution = solve("5 3 _ _ 7 _ _ _ _\n\
-                              6 _ _ 1 9 5 _ _ _\n\
-                              _ 9 8 _ _ _ _ 6 _\n\
-                              8 _ _ _ 6 _ _ _ 3\n\
-                              4 _ _ 8 _ 3 _ _ 1\n\
-                              7 _ _ _ 2 _ _ _ 6\n\
-                              _ 6 _ _ _ _ 2 8 _\n\
-                              _ _ _ 4 1 9 _ _ 5\n\
-                              _ _ _ _ 8 _ _ 7 9\n");
+        let solution = fully_partition("5 3 _ _ 7 _ _ _ _\n\
+                                        6 _ _ 1 9 5 _ _ _\n\
+                                        _ 9 8 _ _ _ _ 6 _\n\
+                                        8 _ _ _ 6 _ _ _ 3\n\
+                                        4 _ _ 8 _ 3 _ _ 1\n\
+                                        7 _ _ _ 2 _ _ _ 6\n\
+                                        _ 6 _ _ _ _ 2 8 _\n\
+                                        _ _ _ 4 1 9 _ _ 5\n\
+                                        _ _ _ _ 8 _ _ 7 9\n");
 
         assert_eq!(solution, "5 3 4 6 7 8 9 1 2\n\
                               6 7 2 1 9 5 3 4 8\n\
@@ -413,10 +567,8 @@ mod tests {
                               3 4 5 2 8 6 1 7 9\n");
     }
 
-    fn solve(input: &str) -> String {
-        let mut lines = input.lines().map(|line| Ok(line.to_string()));
-        let mut grid = Grid::read(&mut lines).unwrap();
-        let rules = Rules::new_standard(grid.size()).unwrap();
+    fn fully_partition(input: &str) -> String {
+        let (mut grid, rules) = read_grid(input);
         let mut partitioner = Partitioner::new(&rules);
         let mut vetoes: Vec<_> = grid.vetoes().collect();
         while vetoes.len() > 0 {
@@ -438,5 +590,77 @@ mod tests {
         let mut p2 = p.boxed_clone();
         assert_eq!(p2.inferences(), p.inferences());
         assert!(p2.inferences().len() > 0);
+    }
+
+    #[test]
+    fn test_solve_classic9_evil() {
+        let solution = solve_str("_ _ _ _ _ _ _ _ _\n\
+                                  _ _ _ _ _ _ 3 _ 8\n\
+                                  _ _ _ _ _ 2 5 6 _\n\
+                                  _ _ 9 _ 6 _ _ _ _\n\
+                                  _ _ 6 _ _ 3 7 _ _\n\
+                                  _ _ _ _ 2 _ 8 5 _\n\
+                                  _ 6 _ _ 3 7 _ _ 4\n\
+                                  _ 8 _ _ 1 9 _ _ _\n\
+                                  _ 4 5 _ _ _ _ 7 9\n");
+
+        assert_eq!(solution, "Unique\n\
+                              5 3 4 6 7 8 9 1 2\n\
+                              6 7 2 1 9 5 3 4 8\n\
+                              1 9 8 3 4 2 5 6 7\n\
+                              8 5 9 7 6 1 4 2 3\n\
+                              4 2 6 8 5 3 7 9 1\n\
+                              7 1 3 9 2 4 8 5 6\n\
+                              9 6 1 5 3 7 2 8 4\n\
+                              2 8 7 4 1 9 6 3 5\n\
+                              3 4 5 2 8 6 1 7 9\n");
+    }
+
+    #[test]
+    fn test_unsolvable() {
+        let (grid, rules) = read_grid("_ _ 1 _\n\
+                                       _ 2 _ _\n\
+                                       3 _ _ _\n\
+                                       4 _ _ _\n");
+        assert!( solve(grid, rules).grid().is_none() );
+    }
+
+    #[test]
+    fn test_multuple_solutions() {
+        let solution = solve_str("1 2 3 4\n\
+                                  4 3 _ _\n\
+                                  3 4 _ _\n\
+                                  2 1 4 3\n");
+        assert!(
+            solution == "NonUnique\n\
+                         1 2 3 4\n\
+                         4 3 1 2\n\
+                         3 4 2 1\n\
+                         2 1 4 3\n" ||
+            solution == "NonUnique\n\
+                         1 2 3 4\n\
+                         4 3 2 1\n\
+                         3 4 1 2\n\
+                         2 1 4 3\n"
+        );
+    }
+
+    fn solve_str(input: &str) -> String {
+        let (grid, rules) = read_grid(input);
+        let solution = solve(grid, rules);
+        let mut output = String::new();
+        let _ = match solution {
+            Solution::Unique(grid)    => write!(&mut output, "Unique\n{}",    grid),
+            Solution::NonUnique(grid) => write!(&mut output, "NonUnique\n{}", grid),
+            Solution::Unsolvable      => write!(&mut output, "Unsolvable\n"),
+        };
+        output
+    }
+
+    fn read_grid(input: &str) -> (Grid, Rules) {
+        let mut lines = input.lines().map(|line| Ok(line.to_string()));
+        let grid = Grid::read(&mut lines).unwrap();
+        let rules = Rules::new_standard(grid.size()).unwrap();
+        (grid, rules)
     }
 }
