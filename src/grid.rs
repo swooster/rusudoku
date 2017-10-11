@@ -211,6 +211,42 @@ impl Grid {
         }
     }
 
+    /// Creates a new `Grid` from a slice representing initial conditions.
+    ///
+    /// Primarily intended to ease setup of tests and examples, so it will panic if the slice isn't
+    /// setup properly. The slice must be a square where each element corresponds to a cell. A value
+    /// of `0` indicates that the cell is unconstrained/unknown.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use rusudoku::grid::*;
+    /// let grid = Grid::literal(&[
+    ///     1, 2, 3, 4,
+    ///     3, 0, 0, 2,
+    ///     2, 0, 0, 3,
+    ///     4, 3, 2, 1,
+    /// ]);
+    /// assert_eq!(grid[CellId(4)], [false, false, true, false]);
+    /// assert_eq!(grid[CellId(5)], [true,  true,  true, true ]);
+    /// ```
+    pub fn literal(values: &[usize]) -> Grid {
+        // This makes me a little uncomfortable, but at least
+        // it shouldn't be a problem for reasonable sizes.
+        let size = (values.len() as f64).sqrt().ceil() as usize;
+        assert_eq!(size*size, values.len());
+        let mut grid = Grid::new(size);
+        for ((_, dst_cell), &value) in grid.cells_mut().zip(values) {
+            if value > 0 {
+                for possibility in dst_cell.iter_mut() {
+                    *possibility = false;
+                }
+                dst_cell[value-1] = true;
+            }
+        }
+        grid
+    }
+
     /// Reads new `Grid` from lines iterator.
     pub fn read<I>(lines: &mut I) -> Result<Grid, io::Error>
         where I: Iterator<Item=IOResult<String>> {
@@ -541,6 +577,32 @@ mod tests {
         let grid = Grid::new(9);
         assert_eq!(grid.size(), 9);
         assert_eq!(grid.cases.len(), 729);
+    }
+
+    #[test]
+    fn test_grid_literal() {
+        let grid = Grid::literal(&[
+            1, 2, 3, 4,
+            3, 0, 0, 2,
+            2, 0, 0, 3,
+            4, 3, 2, 1,
+        ]);
+        assert_eq!(grid[CellId( 0)], [true,  false, false, false]);
+        assert_eq!(grid[CellId( 1)], [false, true,  false, false]);
+        assert_eq!(grid[CellId( 2)], [false, false, true,  false]);
+        assert_eq!(grid[CellId( 3)], [false, false, false, true ]);
+        assert_eq!(grid[CellId( 4)], [false, false, true,  false]);
+        assert_eq!(grid[CellId( 5)], [true,  true,  true,  true ]);
+        assert_eq!(grid[CellId( 6)], [true,  true,  true,  true ]);
+        assert_eq!(grid[CellId( 7)], [false, true,  false, false]);
+        assert_eq!(grid[CellId( 8)], [false, true,  false, false]);
+        assert_eq!(grid[CellId( 9)], [true,  true,  true,  true ]);
+        assert_eq!(grid[CellId(10)], [true,  true,  true,  true ]);
+        assert_eq!(grid[CellId(11)], [false, false, true,  false]);
+        assert_eq!(grid[CellId(12)], [false, false, false, true ]);
+        assert_eq!(grid[CellId(13)], [false, false, true,  false]);
+        assert_eq!(grid[CellId(14)], [false, true,  false, false]);
+        assert_eq!(grid[CellId(15)], [true,  false, false, false]);
     }
 
     #[test]
