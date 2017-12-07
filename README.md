@@ -2,7 +2,7 @@
 
 This is a sudoku solver written to learn Rust. It consists of a crate (called `rusudoku`) and an
 executable. The executable reads a single puzzle from stdin and prints its solution to stdout.
-Puzzles formatted like so:
+Puzzles are formatted like so:
 
 ```
 5 3 _ _ 7 _ _ _ _
